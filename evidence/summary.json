@@ -1,0 +1,134 @@
+{
+  "date_utc": "2026-08-19",
+  "hardware": "1x NVIDIA DGX Spark GB10 (SM121), 128 GB unified memory, 20 CPU threads (10x Cortex-X5 3.9 GHz + 10x Cortex-A725 2.8 GHz)",
+  "engine": {
+    "image": "vllm/vllm-openai:v0.27.1",
+    "image_id": "sha256:2c211a1273b48e8929f893b267aeb1509e6b84654cdbde1bad56d79e3964224d",
+    "build_commit": "6e448d0ea9bf3d88d898b65449ca6dc2aec170ac"
+  },
+  "models": {
+    "target": {
+      "served_name": "Qwen3.8-27B",
+      "local_snapshot": "Qwen3.8-27B-NVFP4",
+      "files": ["model.safetensors", "model_mtp.safetensors", "config.json"],
+      "architecture": "Qwen3_5ForConditionalGeneration",
+      "quant": "mixed NVFP4 MLP + FP8 attention (compressed-tensors)",
+      "kv_cache": "fp8",
+      "context_served": 65536,
+      "native_context": 262144
+    },
+    "draft_dspark_only_for_ab": {
+      "local_snapshot": "Qwen3.8-27B-DSpark-vLLM",
+      "architectures": ["Qwen3DSparkModel"],
+      "block_size": 7,
+      "used_in": ["A_baseline_dspark7_probabilistic", "B_dspark7_default_sample"],
+      "not_used_in_winner": true
+    }
+  },
+  "winner": "D_mtp3_x5pin",
+  "shared_flags": {
+    "tensor_parallel_size": 1,
+    "gpu_memory_utilization": 0.88,
+    "max_model_len": 65536,
+    "max_num_seqs": 24,
+    "max_num_batched_tokens": 8192,
+    "kv_cache_dtype": "fp8",
+    "attention_backend": "flashinfer",
+    "enable_flashinfer_autotune": true,
+    "enable_chunked_prefill": true,
+    "tool_call_parser": "qwen3_coder",
+    "reasoning_parser": "qwen3",
+    "enable_auto_tool_choice": true,
+    "env": {"VLLM_MARLIN_USE_ATOMIC_ADD": "1"},
+    "docker": {"ipc": "host", "gpus": "all"}
+  },
+  "configs": {
+    "A_baseline_dspark7_probabilistic": {
+      "spec": {"method": "dspark", "num_speculative_tokens": 7, "draft_sample_method": "probabilistic"},
+      "prefix_caching": true,
+      "cpuset_cpus": null,
+      "c1_median_tok_s": 24.6769,
+      "c8_aggregate_median_tok_s": 96.1189,
+      "c8_per_stream_median_tok_s": 12.02,
+      "sample_tok_s": 19.08,
+      "last_mean_accept_length": 2.39,
+      "last_draft_accept_pct": 19.80
+    },
+    "B_dspark7_default_sample": {
+      "spec": {"method": "dspark", "num_speculative_tokens": 7},
+      "prefix_caching": true,
+      "cpuset_cpus": null,
+      "boot_s": 482.7,
+      "c1_median_tok_s": 23.1690,
+      "c8_aggregate_median_tok_s": 91.9091,
+      "c8_per_stream_median_tok_s": 12.73,
+      "sample_tok_s": 23.06,
+      "last_mean_accept_length": 3.23,
+      "last_draft_accept_pct": 31.80
+    },
+    "C_mtp3": {
+      "spec": {"method": "mtp", "num_speculative_tokens": 3},
+      "prefix_caching": true,
+      "cpuset_cpus": null,
+      "boot_s": 452.5,
+      "c1_median_tok_s": 25.5142,
+      "c8_aggregate_median_tok_s": 116.6666,
+      "c8_per_stream_median_tok_s": 14.99,
+      "sample_tok_s": 22.12,
+      "last_mean_accept_length": 3.21,
+      "last_draft_accept_pct": 73.60
+    },
+    "D_mtp3_x5pin": {
+      "spec": {"method": "mtp", "num_speculative_tokens": 3},
+      "prefix_caching": true,
+      "cpuset_cpus": "5-9,15-19",
+      "boot_s": 301.4,
+      "c1_median_tok_s": 25.6268,
+      "c8_aggregate_median_tok_s": 122.1776,
+      "c8_per_stream_median_tok_s": 15.51,
+      "sample_tok_s": 22.19,
+      "last_mean_accept_length": 3.39,
+      "last_draft_accept_pct": 79.80
+    },
+    "E_mtp3_x5pin_noprefix": {
+      "spec": {"method": "mtp", "num_speculative_tokens": 3},
+      "prefix_caching": false,
+      "cpuset_cpus": "5-9,15-19",
+      "boot_s": 452.4,
+      "c1_median_tok_s": 24.2850,
+      "c8_aggregate_median_tok_s": 112.3595,
+      "c8_per_stream_median_tok_s": 14.47,
+      "sample_tok_s": 20.14,
+      "last_mean_accept_length": 2.57,
+      "last_draft_accept_pct": 52.30
+    }
+  },
+  "skipped": [
+    {
+      "config": "F_batched16384",
+      "reason": "Winner boot did not emit max_num_scheduled_tokens=8048; batched-token bump not required."
+    }
+  ],
+  "harness": {
+    "endpoint": "POST /v1/chat/completions",
+    "model": "Qwen3.8-27B",
+    "stream": false,
+    "seed": 0,
+    "enable_thinking": false,
+    "c1": "3 reps, ~512 user tokens, max_tokens=256, temperature=0; median e2e tok/s",
+    "c8": "2 waves of 8 concurrent, ~1024 user tokens, max_tokens=256, temperature=0; aggregate = sum(completion_tokens)/wave_wall",
+    "sample": "one c1-shaped request at temperature=1.0, top_p=0.95, top_k=20",
+    "warmup": "one 16-token request discarded after /health"
+  },
+  "tool_call_smoke": {
+    "http_status": 200,
+    "has_tool_calls": true,
+    "function_name": "list_dir",
+    "arguments": "{\"path\": \".\"}",
+    "parser": "qwen3_coder"
+  },
+  "deltas_vs_A": {
+    "D_c1_pct": 3.85,
+    "D_c8_pct": 27.11
+  }
+}
