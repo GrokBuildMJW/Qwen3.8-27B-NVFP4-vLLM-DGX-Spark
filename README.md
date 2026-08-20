@@ -11,6 +11,7 @@ This repository pins the container image, model files, launch flags, CPU pin, an
 | Piece | Value |
 |---|---|
 | Target | Local NVFP4 snapshot `Qwen3.8-27B-NVFP4` served as `Qwen3.8-27B` |
+| Snapshot | `unsloth/Qwen3.8-27B-NVFP4` (Unsloth Dynamic mixed NVFP4 MLP + FP8 attention) |
 | Target files | `model.safetensors` + in-checkpoint `model_mtp.safetensors` + `config.json` |
 | Architecture | `Qwen3_5ForConditionalGeneration` (mixed NVFP4 MLP, FP8 attention) |
 | Image | `vllm/vllm-openai:v0.27.1` |
@@ -83,6 +84,33 @@ C1 is the median of three 512-in / 256-out greedy runs. C8 is the median of two 
 Versus A, D is about **+4%** single-stream and **+27%** eight-way aggregate. Switching DSpark k=7 to MTP k=3 is the large move. The X5 pin adds a smaller C8 gain on top of MTP. Turning prefix cache off (E) lost both speed and accept rate.
 
 A sixth knob (`--max-num-batched-tokens 16384`) was skipped: the winner boot did not emit the `max_num_scheduled_tokens is set to 8048` warning that appeared on the DSpark boots.
+
+## Follow-up (2026-08-20)
+
+Same image digest, same Unsloth snapshot, same harness. **D stays the winner.** The rows below are negative results and one same-day D re-measure. Do not treat an 11-hour-old process as the k=3 baseline: after ~11 h uptime, live D had dropped to mean accept 2.92 / 64% draft and C8 112.6. A fresh k=3 boot the same day reproduced C1 at **25.62** (published D was 25.63). Fresh C8 was 116.0 vs 122.2 on 08-19; C1 is the stable claim, C8 moves a few percent day to day.
+
+`tokenizer.json` on this Unsloth snapshot has `"truncation": null`. The community 2048 silent-cut bug does not apply here.
+
+| Config | Spec | Extra | C1 median tok/s | C8 aggregate tok/s | Last mean accept | Last draft accept |
+|---|---|---|---:|---:|---:|---:|
+| D_fresh (same-day D) | MTP k=3 | prefix on, X5 pin | **25.62** | 116.0 | — | — |
+| F | MTP k=4 | prefix on, X5 pin | 24.08 | 100.8 | 3.50 | 62.6% |
+| F | MTP k=5 | prefix on, X5 pin | 24.31 | 114.5 | 3.80 | 55.9% |
+| I | MTP k=5 | prefix on, X5 pin, `--async-scheduling` | 24.34 | 121.3 | 3.83 | 56.7% |
+| G | MTP k=3 | **Inferact** NVFP4 snapshot, X5 pin | 17.37 | 99.2 | 3.16 | 71.9% |
+| G | MTP k=5 | **Inferact** NVFP4 snapshot, X5 pin | 16.29 | 80.3 | 3.32 | 46.4% |
+| G | MTP k=3 | **RadixArk** ModelOpt NVFP4, X5 pin | — | — | — | — |
+
+RadixArk never became ready: `/v1/models` stayed non-200 for 15 minutes on `v0.27.1`, then the boot was skipped.
+
+What this says:
+
+- **Do not swap Unsloth mixed NVFP4+FP8 for Inferact W4A4 on this box expecting a speedup.** Inferact is the snapshot some vLLM recipes name for Qwen3.8-27B NVFP4. On one GB10 it lost about **32%** C1 (25.62 → 17.37) and about **14%** C8. Higher draft-accept % on Inferact k=3 (71.9%) did not translate into tokens per second.
+- **Raising MTP k above 3 does not raise single-stream decode.** k=4 and k=5 lifted mean accept length (3.5–3.8 vs D's 3.39 on 08-19) and cut draft-accept %. Extra verify work ate the gain. C1 stayed ~24.1–24.3 vs 25.6.
+- **`--async-scheduling` is a C8-only knob.** On k=5 it moved C8 114.5 → 121.3 (~+6%) and left C1 at 24.3. Versus same-day fresh k=3, C8 is +4.6% (inside the 5% window this tree uses) while C1 is −5%. Kept off the winner.
+- Weight swaps and k-sweeps are exhausted for this vLLM pin. A jump toward ~34 tok/s is an engine change (not measured here), not another NVFP4 scale.
+
+Raw JSON: `evidence/bench-D_fresh_k3.json`, `evidence/bench-F_mtp4.json`, `evidence/bench-F_mtp5.json`, `evidence/bench-I_async.json`, `evidence/bench-G_inferact_mtp*.json`. Live-process row (not a claim): `evidence/bench-D_live.json`.
 
 ### Sampling row (not the claim row)
 
